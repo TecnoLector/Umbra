@@ -9,6 +9,7 @@ import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import umbra.entities.LightSource;
 
 /**
  * [v1.0] Sistema de partículas: muchas partículas pequeñas, cada una con posición, velocidad
@@ -217,25 +218,62 @@ public class ParticleSystem {
     }
 
     public void draw(Graphics2D g) {
+        draw(g, null);
+    }
+
+    /**
+     * [v1.2] Dibuja las partículas con dispersión atmosférica (efecto Tyndall):
+     * las motas y esporas que entran en el radio de la luz ganan un halo cálido/frío
+     * y aumentan ligeramente su brillo según la distancia inversa al foco.
+     */
+    public void draw(Graphics2D g, LightSource light) {
+        double lx = (light != null) ? light.getX() : 0;
+        double ly = (light != null) ? light.getY() : 0;
+        double maxDist = 230.0;
+
+        Color tintColor = null;
+        if (light != null) {
+            double dark = light.getDarkness();
+            tintColor = mixColor(new Color(255, 210, 125), new Color(235, 65, 65), dark);
+            if (light.isPinned()) {
+                tintColor = mixColor(tintColor, new Color(145, 205, 255), 0.65);
+            }
+        }
+
         for (Particle p : particles) {
             double t = p.life / p.maxLife;   // 1 al nacer, 0 al morir
-            // Las que ondulan (waveAmp > 0) aparecen y se apagan suave: la envolvente sin(π·t) vale 0 en t = 0 y t = 1, y 1 en medio.
-            // Las demás se desvanecen con t², más rápido al final.
             double envelope = (p.waveAmp > 0) ? Math.sin(Math.PI * t) : (t * t);
             int alpha = (int) (255 * envelope);
-            alpha = alpha * p.color.getAlpha() / 255;   // el alfa del color es su opacidad máxima (el vapor)
+            alpha = alpha * p.color.getAlpha() / 255;
 
-            if (p.halo) {
-                double h = p.size * 2.4;
-                g.setColor(withAlpha(p.color, alpha / 4));
+            // Factor de iluminación por proximidad a Logi (0.0 lejos, hasta 1.0 muy cerca)
+            double lightBoost = 0.0;
+            if (light != null) {
+                double dist = Math.hypot(p.x - lx, p.y - ly);
+                if (dist < maxDist) {
+                    double k = 1.0 - (dist / maxDist);
+                    lightBoost = k * k;
+                }
+            }
+
+            Color renderColor = (lightBoost > 0.01 && tintColor != null)
+                    ? mixColor(p.color, tintColor, lightBoost * 0.55)
+                    : p.color;
+
+            if (p.halo || lightBoost > 0.15) {
+                double haloScale = 2.4 + lightBoost * 1.4;
+                double h = p.size * haloScale;
+                double lifeRatio = alpha / 255.0;
+                int haloAlpha = (int) Math.min(255, (alpha / 4.0) + (lightBoost * 75.0 * lifeRatio));
+                g.setColor(withAlpha(renderColor, haloAlpha));
                 g.fill(new Ellipse2D.Double(p.x - h, p.y - h, h * 2, h * 2));
             }
 
-            double s = p.size * (0.5 + 0.5 * t);   // y se encoge
-            g.setColor(withAlpha(p.color, alpha));
+            double s = p.size * (0.5 + 0.5 * t) * (1.0 + lightBoost * 0.25);
+            int coreAlpha = (int) Math.min(255, alpha + lightBoost * 90);
+            g.setColor(withAlpha(renderColor, coreAlpha));
 
             if (p.shape == ShapeType.SPARKLE) {
-                // M = T(x, y) · R(ángulo) · S(s): la forma unitaria queda en su sitio, girada y del tamaño justo
                 AffineTransform prev = g.getTransform();
                 g.translate(p.x, p.y);
                 g.rotate(p.angle);
@@ -246,6 +284,14 @@ public class ParticleSystem {
                 g.fill(new Ellipse2D.Double(p.x - s, p.y - s, s * 2, s * 2));
             }
         }
+    }
+
+    private static Color mixColor(Color a, Color b, double t) {
+        t = Math.max(0, Math.min(1, t));
+        int r = (int) (a.getRed() + (b.getRed() - a.getRed()) * t);
+        int g = (int) (a.getGreen() + (b.getGreen() - a.getGreen()) * t);
+        int bl = (int) (a.getBlue() + (b.getBlue() - a.getBlue()) * t);
+        return new Color(r, g, bl);
     }
 
     /** Cuántas partículas hay vivas (para el modo debug). */

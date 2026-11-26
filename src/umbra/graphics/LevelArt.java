@@ -336,6 +336,10 @@ public class LevelArt {
             drawCentered(g, runeGlow, r.x, r.y);
         }
         g.setComposite(old);
+
+        // Cambiar intensidad de luz
+        drawRimLighting(g, camX, camY, light);
+    
     }
 
     /** ¿La base (x, y) de una planta queda en la pantalla, con 40 px de holgura? [B1] También en Y. */
@@ -715,5 +719,90 @@ public class LevelArt {
             (int) Math.round(a.getRed() + (b.getRed() - a.getRed()) * t),
             (int) Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t),
             (int) Math.round(a.getBlue() + (b.getBlue() - a.getBlue()) * t));
+    }
+    // =========================================================
+    //  ILUMINACIÓN DE BORDE (RIM LIGHTING) DINÁMICA
+    // =========================================================
+
+    private void drawRimLighting(Graphics2D g, double camX, double camY, LightSource light) {
+        if (light == null) return;
+        double lx = light.getX();
+        double ly = light.getY();
+        double maxDist = 240.0;
+
+        Composite oldComp = g.getComposite();
+        Stroke oldStroke = g.getStroke();
+
+        double dark = light.getDarkness();
+        Color rimGlow = mix(new Color(255, 195, 110), new Color(220, 45, 45), dark);
+        Color rimCore = mix(new Color(255, 240, 195), new Color(255, 130, 110), dark);
+
+        if (light.isPinned()) {
+            rimGlow = mix(rimGlow, new Color(130, 195, 255), 0.65);
+            rimCore = mix(rimCore, new Color(215, 240, 255), 0.65);
+        }
+
+        Stroke glowStroke = new BasicStroke(4.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+        Stroke coreStroke = new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+
+        // 1. Repisas pisables: solo la cara superior recibe luz de borde (evita rayas en muros laterales)
+        for (Rectangle2D r : level.getPlatforms()) {
+            if (hall != null && buried(level, r)) continue;
+            paintEdgeRim(g, r, lx, ly, camX, camY, maxDist, rimGlow, rimCore, glowStroke, coreStroke, true);
+        }
+
+        // 2. Bloques / losas flotantes: iluminan todas sus caras orientadas hacia Logi
+        for (Block b : level.getBlocks()) {
+            paintEdgeRim(g, b.getBounds(), lx, ly, camX, camY, maxDist, rimGlow, rimCore, glowStroke, coreStroke, false);
+        }
+
+        g.setStroke(oldStroke);
+        g.setComposite(oldComp);
+    }
+
+    private static void paintEdgeRim(Graphics2D g, Rectangle2D r, double lx, double ly,
+                                     double camX, double camY, double maxDist,
+                                     Color rimGlow, Color rimCore,
+                                     Stroke glowStroke, Stroke coreStroke, boolean topOnly) {
+        if (r.getMaxX() < camX || r.getMinX() > camX + Config.WIDTH
+                || r.getMaxY() < camY || r.getMinY() > camY + Config.HEIGHT) return;
+
+        double closestX = Math.max(r.getMinX(), Math.min(lx, r.getMaxX()));
+        double closestY = Math.max(r.getMinY(), Math.min(ly, r.getMaxY()));
+        double dist = Math.hypot(lx - closestX, ly - closestY);
+
+        if (dist >= maxDist || dist < 1.0) return;
+
+        double t = 1.0 - (dist / maxDist);
+        float intensity = (float) (t * t);
+
+        double span = Math.sqrt(Math.max(0, maxDist * maxDist - dist * dist));
+        double x1 = Math.max(r.getMinX() + 3.0, lx - span);
+        double x2 = Math.min(r.getMaxX() - 3.0, lx + span);
+        double y1 = Math.max(r.getMinY() + 1.0, ly - span);
+        double y2 = Math.min(r.getMaxY() - 1.0, ly + span);
+
+        boolean topVisible    = ly < r.getMinY() && x2 > x1;
+        boolean bottomVisible = !topOnly && ly > r.getMaxY() && x2 > x1;
+        boolean leftVisible   = !topOnly && lx < r.getMinX() && y2 > y1;
+        boolean rightVisible  = !topOnly && lx > r.getMaxX() && y2 > y1;
+
+        if (!topVisible && !bottomVisible && !leftVisible && !rightVisible) return;
+
+        g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.min(1f, intensity * 0.35f)));
+        g.setColor(rimGlow);
+        g.setStroke(glowStroke);
+        if (topVisible)    g.draw(new Line2D.Double(x1, r.getMinY() + 1.0, x2, r.getMinY() + 1.0));
+        if (bottomVisible) g.draw(new Line2D.Double(x1, r.getMaxY() - 1.0, x2, r.getMaxY() - 1.0));
+        if (leftVisible)   g.draw(new Line2D.Double(r.getMinX() + 1.0, y1, r.getMinX() + 1.0, y2));
+        if (rightVisible)  g.draw(new Line2D.Double(r.getMaxX() - 1.0, y1, r.getMaxX() - 1.0, y2));
+
+        g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.min(1f, intensity * 0.75f)));
+        g.setColor(rimCore);
+        g.setStroke(coreStroke);
+        if (topVisible)    g.draw(new Line2D.Double(x1, r.getMinY() + 1.0, x2, r.getMinY() + 1.0));
+        if (bottomVisible) g.draw(new Line2D.Double(x1, r.getMaxY() - 1.0, x2, r.getMaxY() - 1.0));
+        if (leftVisible)   g.draw(new Line2D.Double(r.getMinX() + 1.0, y1, r.getMinX() + 1.0, y2));
+        if (rightVisible)  g.draw(new Line2D.Double(r.getMaxX() - 1.0, y1, r.getMaxX() - 1.0, y2));
     }
 }

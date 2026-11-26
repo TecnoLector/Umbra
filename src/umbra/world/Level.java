@@ -15,6 +15,7 @@ import java.util.List;
 
 import umbra.core.Config;
 import umbra.entities.Block;
+import umbra.entities.PatrolLight;
 import umbra.entities.Player;
 import umbra.graphics.CandelabraArt;
 import umbra.graphics.CandelabraState;
@@ -37,6 +38,7 @@ public class Level {
     private final List<Rectangle2D> platforms = new ArrayList<>();
     private final List<Block> blocks = new ArrayList<>();
     private final List<Fragment> fragments = new ArrayList<>();   // [B4] los pedazos del Gran Farol de la zona
+    private final List<PatrolLight> patrolLights = new ArrayList<>();    
     private Rectangle2D tempBridge;   // solo para el avance 30%
 
     /** Todo lo que es sólido para el jugador (repisas + bloques + puente). */

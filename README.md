@@ -342,6 +342,11 @@ src/umbra/
 - [x] Arrebatos con aviso: Logi se queda quieto y luego tira hacia Candil, lo deja sin sombra y puede hacerlo caer; fijarlo lo protege
 - [x] Capturas de pantalla en este README
 
+### v0.9.7 — Iluminación atmosférica y depuración visual
+- [x] Iluminación de borde dinámica (*Rim Lighting*) en `LevelArt`: resalta las repisas y bloques flotantes orientados hacia Logi dentro de un radio de 240 px con atenuación cuadrática inversa y cambio de temperatura según el estado de la llama
+- [x] Dispersión atmosférica (*efecto Tyndall*) en `ParticleSystem`: las motas de sombra y esporas que entran en el haz de luz de Logi amplifican su halo y adoptan el tinte de la llama
+- [x] Visualizador técnico con tecla `F3` en `GamePanel`: muestra en tiempo real los rayos de proyección hacia los bloques oclusores, los contornos de los polígonos de sombra (`ShadowCaster`), los radios de luz/desmoronamiento, la hitbox reactiva de Candil y telemetría de rendimiento
+
 ### Después
 Las versiones siguen: el juego todavía puede crecer.
 - [ ] La persecución: la llama negra, luces que se mueven solas y obstáculos nuevos
