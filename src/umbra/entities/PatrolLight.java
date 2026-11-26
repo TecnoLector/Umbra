@@ -10,6 +10,8 @@ import umbra.core.Config;
 /**
  * Centinela de Llama Negra: una luz autónoma que patrulla entre dos puntos (x1, y1) y (x2, y2).
  * Proyecta sombras dinámicas mediante ShadowCaster y desmorona a Candil si entra en su radio.
+ *
+ * TODAVÍA NO SE USA: ninguna zona la crea ni la actualiza. Queda lista para la etapa de la persecución.
  */
 public class PatrolLight {
 

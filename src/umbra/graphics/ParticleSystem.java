@@ -217,6 +217,9 @@ public class ParticleSystem {
         particles.removeIf(p -> p.life <= 0);
     }
 
+    /** El círculo que se reutiliza para cada partícula (así no se crea uno por partícula y cuadro). */
+    private final Ellipse2D.Double circle = new Ellipse2D.Double();
+
     public void draw(Graphics2D g) {
         draw(g, null);
     }
@@ -225,55 +228,75 @@ public class ParticleSystem {
      * [v1.2] Dibuja las partículas con dispersión atmosférica (efecto Tyndall):
      * las motas y esporas que entran en el radio de la luz ganan un halo cálido/frío
      * y aumentan ligeramente su brillo según la distancia inversa al foco.
+     *
+     * La dispersión se calcula con un factor k² que vale 0 a 230 px de Logi y 1 pegado a ella
+     * (k = 1 - distancia / 230): sube despacio al principio y rápido al final.
+     * Con ese factor la partícula se mezcla con el color de la luz (una mezcla lineal, hasta el 55 %),
+     * crece un poco y brilla más.
      */
     public void draw(Graphics2D g, LightSource light) {
         double lx = (light != null) ? light.getX() : 0;
         double ly = (light != null) ? light.getY() : 0;
         double maxDist = 230.0;
+        double maxDist2 = maxDist * maxDist;
 
-        Color tintColor = null;
+        // El color de la luz se calcula una vez por cuadro (no por partícula), en componentes sueltos
+        int tintR = 0, tintG = 0, tintB = 0;
         if (light != null) {
             double dark = light.getDarkness();
-            tintColor = mixColor(new Color(255, 210, 125), new Color(235, 65, 65), dark);
+            Color tint = mixColor(new Color(255, 210, 125), new Color(235, 65, 65), dark);
             if (light.isPinned()) {
-                tintColor = mixColor(tintColor, new Color(145, 205, 255), 0.65);
+                tint = mixColor(tint, new Color(145, 205, 255), 0.65);
             }
+            tintR = tint.getRed();
+            tintG = tint.getGreen();
+            tintB = tint.getBlue();
         }
 
         for (Particle p : particles) {
             double t = p.life / p.maxLife;   // 1 al nacer, 0 al morir
+            // Las que ondulan (waveAmp > 0) aparecen y se apagan suave: la envolvente sin(π·t) vale 0 en t = 0 y t = 1, y 1 en medio.
+            // Las demás se desvanecen con t², más rápido al final.
             double envelope = (p.waveAmp > 0) ? Math.sin(Math.PI * t) : (t * t);
             int alpha = (int) (255 * envelope);
-            alpha = alpha * p.color.getAlpha() / 255;
+            alpha = alpha * p.color.getAlpha() / 255;   // el alfa del color es su opacidad máxima (el vapor)
 
             // Factor de iluminación por proximidad a Logi (0.0 lejos, hasta 1.0 muy cerca)
             double lightBoost = 0.0;
             if (light != null) {
-                double dist = Math.hypot(p.x - lx, p.y - ly);
-                if (dist < maxDist) {
-                    double k = 1.0 - (dist / maxDist);
+                double dx = p.x - lx, dy = p.y - ly;
+                double d2 = dx * dx + dy * dy;
+                if (d2 < maxDist2) {
+                    double k = 1.0 - (Math.sqrt(d2) / maxDist);
                     lightBoost = k * k;
                 }
             }
 
-            Color renderColor = (lightBoost > 0.01 && tintColor != null)
-                    ? mixColor(p.color, tintColor, lightBoost * 0.55)
-                    : p.color;
+            // El color con que se pinta: el suyo, o mezclado con el de la luz si está cerca
+            int cr = p.color.getRed(), cg = p.color.getGreen(), cb = p.color.getBlue();
+            if (lightBoost > 0.01 && light != null) {
+                double m = lightBoost * 0.55;
+                cr = (int) (cr + (tintR - cr) * m);
+                cg = (int) (cg + (tintG - cg) * m);
+                cb = (int) (cb + (tintB - cb) * m);
+            }
 
             if (p.halo || lightBoost > 0.15) {
                 double haloScale = 2.4 + lightBoost * 1.4;
                 double h = p.size * haloScale;
                 double lifeRatio = alpha / 255.0;
                 int haloAlpha = (int) Math.min(255, (alpha / 4.0) + (lightBoost * 75.0 * lifeRatio));
-                g.setColor(withAlpha(renderColor, haloAlpha));
-                g.fill(new Ellipse2D.Double(p.x - h, p.y - h, h * 2, h * 2));
+                g.setColor(rgba(cr, cg, cb, haloAlpha));
+                circle.setFrame(p.x - h, p.y - h, h * 2, h * 2);
+                g.fill(circle);
             }
 
-            double s = p.size * (0.5 + 0.5 * t) * (1.0 + lightBoost * 0.25);
+            double s = p.size * (0.5 + 0.5 * t) * (1.0 + lightBoost * 0.25);   // se encoge al vivir, y crece cerca de la luz
             int coreAlpha = (int) Math.min(255, alpha + lightBoost * 90);
-            g.setColor(withAlpha(renderColor, coreAlpha));
+            g.setColor(rgba(cr, cg, cb, coreAlpha));
 
             if (p.shape == ShapeType.SPARKLE) {
+                // M = T(x, y) · R(ángulo) · S(s): la forma unitaria queda en su sitio, girada y del tamaño justo
                 AffineTransform prev = g.getTransform();
                 g.translate(p.x, p.y);
                 g.rotate(p.angle);
@@ -281,17 +304,23 @@ public class ParticleSystem {
                 g.fill(SPARKLE_SHAPE);
                 g.setTransform(prev);
             } else {
-                g.fill(new Ellipse2D.Double(p.x - s, p.y - s, s * 2, s * 2));
+                circle.setFrame(p.x - s, p.y - s, s * 2, s * 2);
+                g.fill(circle);
             }
         }
     }
 
+    /** Mezcla lineal de dos colores: t = 0 da a, t = 1 da b. */
     private static Color mixColor(Color a, Color b, double t) {
         t = Math.max(0, Math.min(1, t));
         int r = (int) (a.getRed() + (b.getRed() - a.getRed()) * t);
         int g = (int) (a.getGreen() + (b.getGreen() - a.getGreen()) * t);
         int bl = (int) (a.getBlue() + (b.getBlue() - a.getBlue()) * t);
         return new Color(r, g, bl);
+    }
+
+    private static Color rgba(int r, int g, int b, int a) {
+        return new Color(r, g, b, Math.max(0, Math.min(255, a)));
     }
 
     /** Cuántas partículas hay vivas (para el modo debug). */

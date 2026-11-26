@@ -337,9 +337,8 @@ public class LevelArt {
         }
         g.setComposite(old);
 
-        // Cambiar intensidad de luz
+        // Brillo de borde: las orillas de repisas y bloques que miran a Logi se iluminan
         drawRimLighting(g, camX, camY, light);
-    
     }
 
     /** ¿La base (x, y) de una planta queda en la pantalla, con 40 px de holgura? [B1] También en Y. */
@@ -720,10 +719,32 @@ public class LevelArt {
             (int) Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t),
             (int) Math.round(a.getBlue() + (b.getBlue() - a.getBlue()) * t));
     }
+
     // =========================================================
     //  ILUMINACIÓN DE BORDE (RIM LIGHTING) DINÁMICA
     // =========================================================
 
+    /** Lo que no cambia de un cuadro a otro se guarda una vez: los dos grosores de trazo y las transparencias. */
+    private static final Stroke RIM_GLOW_STROKE = new BasicStroke(4.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+    private static final Stroke RIM_CORE_STROKE = new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+    /** Transparencias de 0 a 1 en pasos de 1/255 (como Finale.alpha): así no se crea un AlphaComposite por cada cara. */
+    private static final AlphaComposite[] RIM_ALPHA = new AlphaComposite[256];
+    static {
+        for (int i = 0; i < RIM_ALPHA.length; i++) RIM_ALPHA[i] = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, i / 255f);
+    }
+    /** La línea que se reutiliza para dibujar cada borde (en vez de un Line2D nuevo por cara). */
+    private final Line2D.Double rimLine = new Line2D.Double();
+
+    private static AlphaComposite rimAlpha(double a) {
+        return RIM_ALPHA[(int) Math.round(Math.max(0, Math.min(1, a)) * 255)];
+    }
+
+    /**
+     * Brillo de borde (rim lighting): las orillas de lo sólido que quedan a menos de 240 px de Logi
+     * se iluminan, con un trazo ancho y suave (el resplandor) y otro fino y claro (el filo).
+     * Los colores dependen de la oscuridad de Logi (cálido, rojo si es negra) y de si está fija (azulado);
+     * se calculan una sola vez por cuadro y se pasan a todas las caras.
+     */
     private void drawRimLighting(Graphics2D g, double camX, double camY, LightSource light) {
         if (light == null) return;
         double lx = light.getX();
@@ -742,28 +763,30 @@ public class LevelArt {
             rimCore = mix(rimCore, new Color(215, 240, 255), 0.65);
         }
 
-        Stroke glowStroke = new BasicStroke(4.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
-        Stroke coreStroke = new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
-
         // 1. Repisas pisables: solo la cara superior recibe luz de borde (evita rayas en muros laterales)
         for (Rectangle2D r : level.getPlatforms()) {
             if (hall != null && buried(level, r)) continue;
-            paintEdgeRim(g, r, lx, ly, camX, camY, maxDist, rimGlow, rimCore, glowStroke, coreStroke, true);
+            paintEdgeRim(g, r, lx, ly, camX, camY, maxDist, rimGlow, rimCore, true);
         }
 
         // 2. Bloques / losas flotantes: iluminan todas sus caras orientadas hacia Logi
         for (Block b : level.getBlocks()) {
-            paintEdgeRim(g, b.getBounds(), lx, ly, camX, camY, maxDist, rimGlow, rimCore, glowStroke, coreStroke, false);
+            paintEdgeRim(g, b.getBounds(), lx, ly, camX, camY, maxDist, rimGlow, rimCore, false);
         }
 
         g.setStroke(oldStroke);
         g.setComposite(oldComp);
     }
 
-    private static void paintEdgeRim(Graphics2D g, Rectangle2D r, double lx, double ly,
-                                     double camX, double camY, double maxDist,
-                                     Color rimGlow, Color rimCore,
-                                     Stroke glowStroke, Stroke coreStroke, boolean topOnly) {
+    /**
+     * Ilumina las caras de un rectángulo que miran a Logi. Con topOnly (las repisas) solo la de arriba.
+     * La intensidad cae con el cuadrado de la distancia: t = 1 - d / 240 y fuerza t², así que
+     * es máxima pegado a Logi y desaparece suave a 240 px. Una cara "mira" a Logi si Logi queda
+     * del lado de afuera de ese borde; el tramo iluminado es el que cae dentro del alcance de la luz.
+     */
+    private void paintEdgeRim(Graphics2D g, Rectangle2D r, double lx, double ly,
+                              double camX, double camY, double maxDist,
+                              Color rimGlow, Color rimCore, boolean topOnly) {
         if (r.getMaxX() < camX || r.getMinX() > camX + Config.WIDTH
                 || r.getMaxY() < camY || r.getMinY() > camY + Config.HEIGHT) return;
 
@@ -789,20 +812,23 @@ public class LevelArt {
 
         if (!topVisible && !bottomVisible && !leftVisible && !rightVisible) return;
 
-        g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.min(1f, intensity * 0.35f)));
+        g.setComposite(rimAlpha(Math.min(1f, intensity * 0.35f)));
         g.setColor(rimGlow);
-        g.setStroke(glowStroke);
-        if (topVisible)    g.draw(new Line2D.Double(x1, r.getMinY() + 1.0, x2, r.getMinY() + 1.0));
-        if (bottomVisible) g.draw(new Line2D.Double(x1, r.getMaxY() - 1.0, x2, r.getMaxY() - 1.0));
-        if (leftVisible)   g.draw(new Line2D.Double(r.getMinX() + 1.0, y1, r.getMinX() + 1.0, y2));
-        if (rightVisible)  g.draw(new Line2D.Double(r.getMaxX() - 1.0, y1, r.getMaxX() - 1.0, y2));
+        g.setStroke(RIM_GLOW_STROKE);
+        drawRimFaces(g, r, x1, x2, y1, y2, topVisible, bottomVisible, leftVisible, rightVisible);
 
-        g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.min(1f, intensity * 0.75f)));
+        g.setComposite(rimAlpha(Math.min(1f, intensity * 0.75f)));
         g.setColor(rimCore);
-        g.setStroke(coreStroke);
-        if (topVisible)    g.draw(new Line2D.Double(x1, r.getMinY() + 1.0, x2, r.getMinY() + 1.0));
-        if (bottomVisible) g.draw(new Line2D.Double(x1, r.getMaxY() - 1.0, x2, r.getMaxY() - 1.0));
-        if (leftVisible)   g.draw(new Line2D.Double(r.getMinX() + 1.0, y1, r.getMinX() + 1.0, y2));
-        if (rightVisible)  g.draw(new Line2D.Double(r.getMaxX() - 1.0, y1, r.getMaxX() - 1.0, y2));
+        g.setStroke(RIM_CORE_STROKE);
+        drawRimFaces(g, r, x1, x2, y1, y2, topVisible, bottomVisible, leftVisible, rightVisible);
+    }
+
+    /** Traza las caras que miran a Logi, con la línea reutilizada. */
+    private void drawRimFaces(Graphics2D g, Rectangle2D r, double x1, double x2, double y1, double y2,
+                              boolean top, boolean bottom, boolean left, boolean right) {
+        if (top)    { rimLine.setLine(x1, r.getMinY() + 1.0, x2, r.getMinY() + 1.0); g.draw(rimLine); }
+        if (bottom) { rimLine.setLine(x1, r.getMaxY() - 1.0, x2, r.getMaxY() - 1.0); g.draw(rimLine); }
+        if (left)   { rimLine.setLine(r.getMinX() + 1.0, y1, r.getMinX() + 1.0, y2); g.draw(rimLine); }
+        if (right)  { rimLine.setLine(r.getMaxX() - 1.0, y1, r.getMaxX() - 1.0, y2); g.draw(rimLine); }
     }
 }
