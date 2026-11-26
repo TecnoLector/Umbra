@@ -225,7 +225,7 @@ public class ParticleSystem {
     }
 
     /**
-     * [v1.2] Dibuja las partículas con dispersión atmosférica (efecto Tyndall):
+     * [v0.9.7] Dibuja las partículas con dispersión atmosférica (efecto Tyndall):
      * las motas y esporas que entran en el radio de la luz ganan un halo cálido/frío
      * y aumentan ligeramente su brillo según la distancia inversa al foco.
      *

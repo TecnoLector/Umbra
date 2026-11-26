@@ -10,7 +10,7 @@ public final class Config {
 
     public static final String TITLE = "Umbra";
     /** Cámbiala en cada versión publicada: v0.3 (30%), v0.7 (70%), v1.0 (entrega en la materia)... */
-    public static final String VERSION = "v0.9.6";
+    public static final String VERSION = "v0.9.7";
 
     /** true: el juego empieza con la intro y luego el menú. Ponlo en false para entrar directo al nivel mientras pruebas. */
     public static final boolean SHOW_INTRO = true;

@@ -1336,7 +1336,7 @@ public class GamePanel extends JPanel {
         g2.setTransform(prevTx);
         g2.setFont(HUD_FONT);
 
-        int boxX = 16, boxY = 58, boxW = 330, boxH = 118;
+        int boxX = 16, boxY = 76, boxW = 330, boxH = 118;
         g2.setColor(new Color(10, 12, 22, 195));
         g2.fillRoundRect(boxX, boxY, boxW, boxH, 10, 10);
         g2.setColor(new Color(90, 200, 255, 160));
